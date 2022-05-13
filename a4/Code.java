@@ -23,13 +23,13 @@ public class Code extends JFrame implements GLEventListener, KeyListener
 {	private GLCanvas myCanvas;
 	private double startTime = 0.0;
 	private double elapsedTime;
-	private int renderingProgram, renderingProgramCubeMap, renderingProgramLights, renderingProgramTerrain;
+	private int renderingProgram, renderingProgramCubeMap, renderingProgramLights, renderingProgramTess, renderingProgram3D;
 	private int renderingProgramFLOOR, renderingProgramSURFACE;
 	private int vao[] = new int[1];
-	private int vbo[] = new int[14];
+	private int vbo[] = new int[17];
 	private float cameraX, cameraHeight, cameraZ;
 	private float lightX, lightY, lightZ;
-	private Vector3f earthLocation, moonLocation, terrainLocation;
+	private Vector3f earthLocation, moonLocation, terrainLocation, dolphinLocation, dolphin3DLocation;
 	private boolean axisBoolean = true;
 	private double elapsedTimeOld = 0;
 	private float timeDiff = 0;
@@ -44,7 +44,10 @@ public class Code extends JFrame implements GLEventListener, KeyListener
 	private int sunTexture;
 	private int earthTexture;
 	private int moonTexture;
+
 	private int squareMoonTexture;
+	private int squareMoonHeight;
+	private int squareMoonNormalMap;
 
 	private int[] bufferId = new int[1];
 	private int refractTextureId;
@@ -53,11 +56,12 @@ public class Code extends JFrame implements GLEventListener, KeyListener
 	private int reflectFrameBuffer;
 	
 	private int numObjVertices;
-	private ImportedModel myModel;
+	private ImportedModel myModel, dolphin3D;
 	private Sphere lightSphere;
 	private int numLightVerts;
 	private Sphere earthSphere;
 	private Sphere moon;
+	private int numDolphin3DVerts;
 
 	private int noiseHeight = 256;
 	private int noiseWidth = 256;
@@ -71,6 +75,9 @@ public class Code extends JFrame implements GLEventListener, KeyListener
 	private int dOffsetLoc;
 	private long lastTime = System.currentTimeMillis();
 
+	private float tessInner = 30.0f;
+	private float tessOuter = 20.0f;
+
 	private int lightingOff = 0;
 	
 	// allocate variables for display() function
@@ -80,15 +87,22 @@ public class Code extends JFrame implements GLEventListener, KeyListener
 	private Matrix4f mMat = new Matrix4f();  // model matrix
 	private Matrix4f invTrMat = new Matrix4f(); // inverse-transpose
 	private Matrix4f mvpMat = new Matrix4f(); // model-view-perspective matrix
+	private Matrix4f mvMat = new Matrix4f(); // model-view matrix
 	private int mvpLoc;
 	private int mLoc, vLoc, pLoc, nLoc, aboveLoc;
-	private int globalAmbLoc, ambLoc, diffLoc, specLoc, posLoc, mambLoc, mdiffLoc, mspecLoc, mshiLoc;
+	private int globalAmbLoc, ambLoc, diffLoc, specLoc, posLoc, mambLoc, mdiffLoc, mspecLoc, mshiLoc, mvLoc;
 	private float[] thisAmb, thisDif, thisSpe, matAmb, matDif, matSpe;
 	private float thisShi, matShi;
 	private float aspect;
 	private double tf;
 	private float amt = 0.0f;
 	private int count;
+
+	private int stripeTexture;
+	private int texWidth = 200;
+	private int texHeight= 200;
+	private int texDepth = 200;
+	private double[][][] tex3Dpattern = new double[texWidth][texHeight][texDepth];
 
 	private Camera cameraPosition;
 	
@@ -229,6 +243,29 @@ public class Code extends JFrame implements GLEventListener, KeyListener
 		return textureID;
 	}
 
+	// 3D Texture section
+
+	private void fillDataArray3D(byte data[])
+	{ for (int i=0; i<texWidth; i++)
+		{ for (int j=0; j<texHeight; j++)
+		{ for (int k=0; k<texDepth; k++)
+			{
+		if (tex3Dpattern[i][j][k] == 1.0)
+		{	// yellow color
+			data[i*(texWidth*texHeight*4)+j*(texHeight*4)+k*4+0] = (byte) 255; //red
+			data[i*(texWidth*texHeight*4)+j*(texHeight*4)+k*4+1] = (byte) 255; //green
+			data[i*(texWidth*texHeight*4)+j*(texHeight*4)+k*4+2] = (byte) 0;   //blue
+			data[i*(texWidth*texHeight*4)+j*(texHeight*4)+k*4+3] = (byte) 0;   //alpha
+		}
+		else
+		{	// blue color
+			data[i*(texWidth*texHeight*4)+j*(texHeight*4)+k*4+0] = (byte) 0;   //red
+			data[i*(texWidth*texHeight*4)+j*(texHeight*4)+k*4+1] = (byte) 0;   //green
+			data[i*(texWidth*texHeight*4)+j*(texHeight*4)+k*4+2] = (byte) 255; //blue
+			data[i*(texWidth*texHeight*4)+j*(texHeight*4)+k*4+3] = (byte) 0;   //alpha
+		}
+	} } } }
+
 	private void createReflectRefractBuffers()
 	{	GL4 gl = (GL4) GLContext.getCurrentGL();
 	
@@ -301,6 +338,7 @@ public class Code extends JFrame implements GLEventListener, KeyListener
 		aboveLoc = gl.glGetUniformLocation(renderingProgramSURFACE, "isAbove");
 
 		mMat.translation(0.0f, surfacePlaneHeight, 0.0f);
+		//mMat.rotateXYZ((float)Math.toRadians(cameraPosition.getYaw()), (float)Math.toRadians(cameraPosition.getPitch()), (float)Math.toRadians(cameraPosition.getRoll()));
 
 		mMat.invert(invTrMat);
 		invTrMat.transpose(invTrMat);
@@ -402,6 +440,11 @@ public class Code extends JFrame implements GLEventListener, KeyListener
 		aspect = (float) myCanvas.getWidth() / (float) myCanvas.getHeight();
 		pMat.identity().setPerspective((float) Math.toRadians(60.0f), aspect, 0.1f, 1000.0f);
 
+
+		// mMat.identity();
+		// vMat.identity().setTranslation(dolphinLocation);
+		// vMat.rotateXYZ((float)Math.toRadians(cameraPosition.getYaw()), (float)Math.toRadians(cameraPosition.getPitch()), (float)Math.toRadians(cameraPosition.getRoll()));
+
 		try {
 			elapsedTimeOld = (float) elapsedTime;
 			elapsedTime = System.currentTimeMillis() - startTime;
@@ -485,47 +528,85 @@ public class Code extends JFrame implements GLEventListener, KeyListener
 		// pLoc = gl.glGetUniformLocation(renderingProgram, "p_matrix");
 		// nLoc = gl.glGetUniformLocation(renderingProgram, "norm_matrix");
 
+		// vMat.identity().setTranslation(cameraPosition.getLocation());
+		// vMat.rotateXYZ((float)Math.toRadians(cameraPosition.getYaw()), (float)Math.toRadians(cameraPosition.getPitch()), (float)Math.toRadians(cameraPosition.getRoll()));
+
 		//vMat = cameraPosition.getViewMatrix();
 		amt += elapsedTime * 0.01f;
 
 		// Terrain Code
 
-		gl.glUseProgram(renderingProgramTerrain);
-		mvpLoc = gl.glGetUniformLocation(renderingProgramTerrain, "mvp");
+		gl.glUseProgram(renderingProgramTess);
+
+		matAmb = new float[] { 0.0f, 0.9f, 0.2f, 1.0f };
+		matDif = new float[] { 0.8f, 0.9f, 1.0f, 1.0f };
+		matSpe = new float[] { 1.0f, 1.0f, 1.0f, 1.0f };
+		matShi = 250.0f;
+		
+		// elapsedTime = System.currentTimeMillis() - prevTime;
+		// prevTime = System.currentTimeMillis();
+		//currentLightPos.x = lightLoc.x + (float)elapsedTime * lightMovement;
+		//if (lightLoc.x > 0.5) lightMovement = -.0001f;
+		//else if (lightLoc.x < -0.5) lightMovement = .0001f;
+		
+		mLoc = gl.glGetUniformLocation(renderingProgramTess, "m_matrix");
+		vLoc = gl.glGetUniformLocation(renderingProgramTess, "v_matrix");
+		pLoc = gl.glGetUniformLocation(renderingProgramTess, "p_matrix");
+		nLoc = gl.glGetUniformLocation(renderingProgramTess, "norm_matrix");
 		
 		//vMat.identity().setTranslation(-cameraPosition.getX(), -cameraPosition.getY(), -cameraPosition.getZ());
 		
-		mMat.identity().setTranslation(terrainLocation.x(), terrainLocation.y(), terrainLocation.z());
-		//mMat.rotateY((float) Math.toRadians(180.0f));
-		mMat.scaling(10f);
-
-		mvpMat.identity();
-		mvpMat.mul(pMat);
-		mvpMat.mul(vMat);
-		mvpMat.mul(mMat);
+		//mMat.identity().setTranslation(terrainLocation.x(), terrainLocation.y(), terrainLocation.z());
+		vMat.identity().setTranslation(cameraPosition.getLocation());
+		vMat.rotateXYZ((float)Math.toRadians(cameraPosition.getYaw()), (float)Math.toRadians(cameraPosition.getPitch()), (float)Math.toRadians(cameraPosition.getRoll()));
+		//mMat.rotateX((float) Math.toRadians(20.0f));
+		//mMat.setTranslation(terrainLocation.x(), terrainLocation.y(), terrainLocation.z());
+		mMat.scaling(300f);
 		
-		gl.glUniformMatrix4fv(mvpLoc, 1, false, mvpMat.get(vals));
+		//mMat.setTranslation(0f,-100f,0f);
+		mMat.setTranslation(terrainLocation.x(), terrainLocation.y(), terrainLocation.z());
+		mMat.invert(invTrMat);
+		invTrMat.transpose(invTrMat);
+		
+		//currentLightPos.set(lightLoc);		
+		installLights(renderingProgramTess);
+		
+		gl.glUniformMatrix4fv(mLoc, 1, false, mMat.get(vals));
+		gl.glUniformMatrix4fv(vLoc, 1, false, vMat.get(vals));
+		gl.glUniformMatrix4fv(pLoc, 1, false, pMat.get(vals));
+		gl.glUniformMatrix4fv(nLoc, 1, false, invTrMat.get(vals));
 		
 		gl.glActiveTexture(GL_TEXTURE0);
 		gl.glBindTexture(GL_TEXTURE_2D, squareMoonTexture);
+		gl.glActiveTexture(GL_TEXTURE1);
+		gl.glBindTexture(GL_TEXTURE_2D, squareMoonHeight);
+		gl.glActiveTexture(GL_TEXTURE2);
+		gl.glBindTexture(GL_TEXTURE_2D, squareMoonNormalMap);
 	
 		gl.glClear(GL_DEPTH_BUFFER_BIT);
 		gl.glEnable(GL_DEPTH_TEST);
+		gl.glEnable(GL_CULL_FACE);
 		gl.glFrontFace(GL_CW);
 
 		gl.glPatchParameteri(GL_PATCH_VERTICES, 4);
 		gl.glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 		gl.glDrawArraysInstanced(GL_PATCHES, 0, 4, 64*64);
 
-		vMat.identity().setTranslation(cameraPosition.getLocation());
-		vMat.rotateXYZ((float)Math.toRadians(cameraPosition.getYaw()), (float)Math.toRadians(cameraPosition.getPitch()), (float)Math.toRadians(cameraPosition.getRoll()));
-		
-
 		gl.glUseProgram(renderingProgram);
 		mLoc = gl.glGetUniformLocation(renderingProgram, "m_matrix");
 		vLoc = gl.glGetUniformLocation(renderingProgram, "v_matrix");
 		pLoc = gl.glGetUniformLocation(renderingProgram, "p_matrix");
 		nLoc = gl.glGetUniformLocation(renderingProgram, "norm_matrix");
+
+		gl.glFrontFace(GL_CCW);
+
+		// vMat.identity().setTranslation(cameraPosition.getLocation());
+		// vMat.rotateXYZ((float)Math.toRadians(cameraPosition.getYaw()), (float)Math.toRadians(cameraPosition.getPitch()), (float)Math.toRadians(cameraPosition.getRoll()));
+
+		// vMat.identity().setTranslation(cameraPosition.getLocation());
+		//vMat.identity().setTranslation(cameraPosition.getLocation());
+		// vMat.rotateXYZ((float)Math.toRadians(cameraPosition.getYaw()), (float)Math.toRadians(cameraPosition.getPitch()), (float)Math.toRadians(cameraPosition.getRoll()));
+
 
 		// Sun Code
 		matAmb = goldMatAmb;
@@ -661,16 +742,15 @@ public class Code extends JFrame implements GLEventListener, KeyListener
 		matSpe = silverMatSpe;
 		matShi = silverMatShi;
 
-		// matAmb = bronzeMatAmb;
-		// matDif = bronzeMatDif;
-		// matSpe = bronzeMatSpe;
-		// matShi = bronzeMatShi;
 		installLights(renderingProgram);
 
 		mMat.identity();
+		//vMat.identity();
 		mMat.scaling(5f,5f,5f);
+		//mMat.setTranslation(dolphinLocation);
+		//mMat.setTranslation(cameraPosition.getLocation());
 		//mMat.rotateXYZ((float)Math.toRadians(cameraPosition.getYaw()), (float)Math.toRadians(cameraPosition.getPitch()), (float)Math.toRadians(cameraPosition.getRoll()));
-
+		mMat.rotateY((float)Math.toRadians(180f));
 		installLights(renderingProgram);
 		mMat.invert(invTrMat);
 		invTrMat.transpose(invTrMat);
@@ -712,6 +792,61 @@ public class Code extends JFrame implements GLEventListener, KeyListener
 		gl.glFrontFace(GL_CW);
 		gl.glDrawArrays(GL_TRIANGLES, 0, myModel.getNumVertices());
 		
+		// Dolphin 3d Texture
+
+		gl.glUseProgram(renderingProgram3D);
+
+		mvLoc = gl.glGetUniformLocation(renderingProgram3D, "mv_matrix");
+		pLoc = gl.glGetUniformLocation(renderingProgram3D, "p_matrix");
+		
+		//vMat.identity().setTranslation(-cameraPosition.getX(),-cameraPosition.getY(),-cameraPosition.getZ());
+		//mMat.rotateY((float)Math.toRadians(180f));
+		
+		mMat.identity();
+		mMat.scaling(5f,5f,5f);
+		mMat.rotateY((float)Math.toRadians(270f));
+		mMat.setTranslation(dolphin3DLocation);
+				
+		//vMat.identity().setTranslation(-cameraPosition.getX(),-cameraPosition.getY(),-cameraPosition.getZ());
+		//mMat.rotateY((float)Math.toRadians(180f));
+		// mMat.rotateX((float)Math.toRadians(15.0f));
+		// mMat.rotateY((float)Math.toRadians(45.0f));
+
+		mvMat.identity();
+		mvMat.mul(vMat);
+		mvMat.mul(mMat);
+
+		// gl.glUniformMatrix4fv(mvLoc, 1, false, mvMat.get(vals));
+		// gl.glUniformMatrix4fv(pLoc, 1, false, pMat.get(vals));
+		// gl.glUniformMatrix4fv(mLoc, 1, false, mMat.get(vals));
+		// gl.glUniformMatrix4fv(vLoc, 1, false, vMat.get(vals));
+		// gl.glUniformMatrix4fv(pLoc, 1, false, pMat.get(vals));
+
+		gl.glUniformMatrix4fv(mvLoc, 1, false, mvMat.get(vals));
+		gl.glUniformMatrix4fv(pLoc, 1, false, pMat.get(vals));
+		
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[5]);
+		gl.glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
+		gl.glEnableVertexAttribArray(0);
+		
+		gl.glActiveTexture(GL_TEXTURE0);
+		gl.glBindTexture(GL_TEXTURE_3D, stripeTexture);
+		
+		gl.glEnable(GL_CULL_FACE);
+		gl.glFrontFace(GL_CCW);
+		gl.glEnable(GL_DEPTH_TEST);
+		gl.glDepthFunc(GL_LEQUAL);
+
+		gl.glDrawArrays(GL_TRIANGLES, 0, myModel.getNumVertices());
+
+
+		gl.glUseProgram(renderingProgram);
+		mLoc = gl.glGetUniformLocation(renderingProgram, "m_matrix");
+		vLoc = gl.glGetUniformLocation(renderingProgram, "v_matrix");
+		pLoc = gl.glGetUniformLocation(renderingProgram, "p_matrix");
+		nLoc = gl.glGetUniformLocation(renderingProgram, "norm_matrix");
+
+
 		if(axisBoolean){
 			lightingOff = 0;
 			lightsOff = gl.glGetUniformLocation(renderingProgram,"lightsStatus");
@@ -772,18 +907,20 @@ public class Code extends JFrame implements GLEventListener, KeyListener
 	{	GL4 gl = (GL4) GLContext.getCurrentGL();
 		startTime = System.currentTimeMillis();
 		myModel = new ImportedModel("dolphinHighPoly.obj");
+		dolphin3D = new ImportedModel("dolphinHighPoly.obj");
+		renderingProgram3D =  renderingProgram = Utils.createShaderProgram("Shaders/vertShader3D.glsl", "Shaders/fragShader3D.glsl");
 		renderingProgram = Utils.createShaderProgram("Shaders/vertShader.glsl", "Shaders/fragShader.glsl");
 		renderingProgramCubeMap = Utils.createShaderProgram("Shaders/vertCShader.glsl", "Shaders/fragCShader.glsl");
 		renderingProgramSURFACE = Utils.createShaderProgram("Shaders/vertShaderSURFACE.glsl", "Shaders/fragShaderSURFACE.glsl");
 		renderingProgramFLOOR = Utils.createShaderProgram("Shaders/vertShaderFLOOR.glsl", "Shaders/fragShaderFLOOR.glsl");
-		renderingProgramTerrain = Utils.createShaderProgram("Shaders/vertShaderT.glsl", "Shaders/tessCShader.glsl", "Shaders/tessEShader.glsl", "Shaders/fragShaderT.glsl");
+		renderingProgramTess = Utils.createShaderProgram("Shaders/vertShaderT.glsl", "Shaders/tessCShader.glsl", "Shaders/tessEShader.glsl", "Shaders/fragShaderT.glsl");
 
 		aspect = (float) myCanvas.getWidth() / (float) myCanvas.getHeight();
 		pMat.setPerspective((float) Math.toRadians(60.0f), aspect, 0.1f, 1000.0f);
 
 		setupVertices();
 
-		cameraX = 0.0f; cameraHeight = -2.0f; cameraZ = -12.0f;
+		cameraX = 0.0f; cameraHeight = -2.0f; cameraZ = -40.0f;
 		//cameraX = 0f; cameraHeight = -2.0f; cameraZ = 0f;
 		lightX = initialLightLoc.x(); lightY = initialLightLoc.y(); lightZ = initialLightLoc.z();
 
@@ -791,7 +928,9 @@ public class Code extends JFrame implements GLEventListener, KeyListener
 		currentLightPos.set(initialLightLoc);
 		moonLocation = new Vector3f(lightX-1,lightY,lightZ-1);
 		earthLocation = new Vector3f(-5f,2f,-8f);
-		terrainLocation = new Vector3f(0f,0f,0f);
+		terrainLocation = new Vector3f(0f,-2f,0f);
+		dolphinLocation = new Vector3f(0f,0f,0f);
+		dolphin3DLocation = new Vector3f(13.0f,5.0f,-40.0f);
 		//vMat.translate(-cameraX,-cameraHeight,-cameraZ);
 
 		skyboxTexture = Utils.loadCubeMap("cubeMap");
@@ -802,11 +941,21 @@ public class Code extends JFrame implements GLEventListener, KeyListener
 		sunTexture = Utils.loadTexture("sunmap.jpg");
 		earthTexture = Utils.loadTexture("earthmap1k.jpg");
 		moonTexture = Utils.loadTexture("moonmap4k.jpg");
-		squareMoonTexture = Utils.loadTexture("squareMoonMap.jpg");
 
+		squareMoonTexture = Utils.loadTexture("squareMoonMap.jpg");
+		squareMoonHeight = Utils.loadTexture("squareMoonBump.jpg");
+		squareMoonNormalMap = Utils.loadTexture("squareMoonNormal.jpg");
+
+		// squareMoonTexture = Utils.loadTexture("hills.jpg");
+		// squareMoonHeight = Utils.loadTexture("hillsbump.jpg");
+		// squareMoonNormalMap = Utils.loadTexture("hillsnorms.jpg");
+		//vMat.rotateXYZ((float)Math.toRadians(cameraPosition.getYaw()), (float)Math.toRadians(cameraPosition.getPitch()), (float)Math.toRadians(cameraPosition.getRoll()));
 		createReflectRefractBuffers();
 
 		noiseTexture = buildNoiseTexture();
+
+		generate3Dpattern();	
+		stripeTexture = load3DTexture();
 	}
 
 	private void installLights(int renderingProgram)
@@ -838,6 +987,7 @@ public class Code extends JFrame implements GLEventListener, KeyListener
 	}
 
 	private void setupVertices(){
+		
 		GL4 gl = (GL4) GLContext.getCurrentGL();
 
 
@@ -867,6 +1017,19 @@ public class Code extends JFrame implements GLEventListener, KeyListener
 		gl.glGenBuffers(vbo.length, vbo, 0);
 
 		// Planes
+		// float[] PLANE_POSITIONS = {
+		// 	-120.0f, 0.0f, -240.0f,  -120.0f, 0.0f, 0.0f,  120.0f, 0.0f, -240.0f,
+		// 	120.0f, 0.0f, -240.0f,  -120.0f, 0.0f, 0.0f,  120.0f, 0.0f, 0.0f
+		// };
+		// float[] PLANE_POSITIONS = {
+		// 	-240.0f, 0.0f, -240.0f,  -240.0f, 0.0f, 0.0f,  240.0f, 0.0f, -240.0f,
+		// 	240.0f, 0.0f, -240.0f,  -240.0f, 0.0f, 0.0f,  240.0f, 0.0f, 0.0f
+		// };
+		// float[] PLANE_POSITIONS = {
+		// 	-240.0f, 0.0f, -240.0f,  -240.0f, 0.0f, 240.0f,  240.0f, 0.0f, -240.0f,
+		// 	240.0f, 0.0f, -240.0f,  -240.0f, 0.0f, 240.0f,  240.0f, 0.0f, 240.0f
+		// };
+
 		float[] PLANE_POSITIONS = {
 			-120.0f, 0.0f, -240.0f,  -120.0f, 0.0f, 0.0f,  120.0f, 0.0f, -240.0f,
 			120.0f, 0.0f, -240.0f,  -120.0f, 0.0f, 0.0f,  120.0f, 0.0f, 0.0f
@@ -903,11 +1066,6 @@ public class Code extends JFrame implements GLEventListener, KeyListener
 			lnvalues[i*3+1]= (float)(norm[indices[i]]).y;
 			lnvalues[i*3+2]=(float) (norm[indices[i]]).z;
 		}
-
-		
-		// gl.glGenVertexArrays(vao.length, vao, 0);
-		// gl.glBindVertexArray(vao[0]);
-		// gl.glGenBuffers(vbo.length, vbo, 0);
 
 		float[] cubePositions =
 		{	-1.0f,  1.0f, -1.0f, -1.0f, -1.0f, -1.0f, 1.0f, -1.0f, -1.0f,
@@ -957,10 +1115,6 @@ public class Code extends JFrame implements GLEventListener, KeyListener
 			0.0f, 0.0f, 100.0f
 		};
 
-		// gl.glGenVertexArrays(vao.length, vao, 0);
-		// gl.glBindVertexArray(vao[0]);
-		// gl.glGenBuffers(vbo.length, vbo, 0);
-
 		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[0]);
 		FloatBuffer cubeBuf = Buffers.newDirectFloatBuffer(cubePositions);
 		gl.glBufferData(GL_ARRAY_BUFFER, cubeBuf.limit()*4, cubeBuf, GL_STATIC_DRAW);
@@ -979,7 +1133,7 @@ public class Code extends JFrame implements GLEventListener, KeyListener
 		gl.glBufferData(GL_ARRAY_BUFFER, zLine.limit()*4, zLine, GL_STATIC_DRAW);
 
 
-		// Shuttle
+		// Main Dolphin
 		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[5]); // 0
 		FloatBuffer vertBuf = Buffers.newDirectFloatBuffer(pvalues);
 		gl.glBufferData(GL_ARRAY_BUFFER, vertBuf.limit()*4, vertBuf, GL_STATIC_DRAW);
@@ -1019,6 +1173,40 @@ public class Code extends JFrame implements GLEventListener, KeyListener
 		gl.glBufferData(GL_ARRAY_BUFFER, planeNorBuf.limit()*4, planeNorBuf, GL_STATIC_DRAW);
 	}
 
+	private int load3DTexture()
+	{	GL4 gl = (GL4) GLContext.getCurrentGL();
+	
+		byte[] data = new byte[texWidth*texHeight*texDepth*4];
+		
+		fillDataArray3D(data);
+
+		ByteBuffer bb = Buffers.newDirectByteBuffer(data);
+
+		int[] textureIDs = new int[1];
+		gl.glGenTextures(1, textureIDs, 0);
+		int textureID = textureIDs[0];
+
+		gl.glBindTexture(GL_TEXTURE_3D, textureID);
+
+		gl.glTexStorage3D(GL_TEXTURE_3D, 1, GL_RGBA8, texWidth, texHeight, texDepth);
+		gl.glTexSubImage3D(GL_TEXTURE_3D, 0, 0, 0, 0,
+				texWidth, texHeight, texDepth, GL_RGBA, GL_UNSIGNED_INT_8_8_8_8_REV, bb);
+		
+		gl.glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+
+		return textureID;
+	}
+
+	void generate3Dpattern()
+	{	for (int x=0; x<texWidth; x++)
+		{	for (int y=0; y<texHeight; y++)
+			{	for (int z=0; z<texDepth; z++)
+				{	if ((y/10)%2 == 0)
+						tex3Dpattern[x][y][z] = 0.0;
+					else
+						tex3Dpattern[x][y][z] = 1.0;
+	}	}	}	}
+
 	public static void main(String[] args) { new Code(); }
 	public void reshape(GLAutoDrawable drawable, int x, int y, int width, int height) {}
 	public void dispose(GLAutoDrawable drawable) {}
@@ -1041,12 +1229,16 @@ public class Code extends JFrame implements GLEventListener, KeyListener
 			System.out.println("w");
 			//cameraPosition.wMove(timeDiff/2);
 			cameraPosition.wMove(0.5f);
+			dolphinLocation = new Vector3f(dolphinLocation.x(), dolphinLocation.y(), dolphinLocation.z()-0.5f);
+			System.out.println(dolphinLocation);
 		}
 
 		if (key == KeyEvent.VK_S) {
 			System.out.println("s");
 			//cameraPosition.wMove(-timeDiff/2);
 			cameraPosition.wMove(-0.5f);
+			dolphinLocation = new Vector3f(dolphinLocation.x(), dolphinLocation.y(), dolphinLocation.z()+0.5f);
+			System.out.println(dolphinLocation);
 		}
 
 		if (key == KeyEvent.VK_A) {
@@ -1054,34 +1246,42 @@ public class Code extends JFrame implements GLEventListener, KeyListener
 			//cameraX-=0.1;
 			//cameraPosition.dMove(-timeDiff/2);
 			cameraPosition.dMove(-0.5f);
+			dolphinLocation = new Vector3f(dolphinLocation.x()+0.5f, dolphinLocation.y(), dolphinLocation.z());
+			System.out.println(dolphinLocation);
 		}
 
 		if (key == KeyEvent.VK_D) {
 			System.out.println("d");
 			//cameraPosition.dMove(timeDiff/2);
 			cameraPosition.dMove(0.5f);
+			dolphinLocation = new Vector3f(dolphinLocation.x()-0.5f, dolphinLocation.y(), dolphinLocation.z());
+			System.out.println(dolphinLocation);
 		}
 
 		if (key == KeyEvent.VK_E) {
 			System.out.println("e");
 			//cameraPosition.vertMove(-timeDiff/2);
 			cameraPosition.vertMove(-0.5f);
+			dolphinLocation = new Vector3f(dolphinLocation.x(), dolphinLocation.y()-0.5f, dolphinLocation.z());
+			System.out.println(dolphinLocation);
 		}
 
 		if (key == KeyEvent.VK_Q) {
 			System.out.println("q");
 			//cameraPosition.vertMove(timeDiff/2);
 			cameraPosition.vertMove(0.5f);
+			dolphinLocation = new Vector3f(dolphinLocation.x(), dolphinLocation.y()+0.5f, dolphinLocation.z());
+			System.out.println(dolphinLocation);
 		}
 	
 		if (key == KeyEvent.VK_LEFT) {
 			System.out.println("left");
-			cameraPosition.setPitch(5.0f);
+			cameraPosition.setPitch(-5.0f);
 		}
 	
 		if (key == KeyEvent.VK_RIGHT) {
 			System.out.println("right");
-			cameraPosition.setPitch(-5.0f);
+			cameraPosition.setPitch(5.0f);
 		}
 	
 		if (key == KeyEvent.VK_UP) {
